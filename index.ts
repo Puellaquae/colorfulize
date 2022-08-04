@@ -11,6 +11,18 @@ let conn = lsp.createProtocolConnection(
 
 conn.listen();
 
+const SemTokenTypes = [];
+
+for (const type in lsp.SemanticTokenTypes) {
+    SemTokenTypes.push(type);
+}
+
+const SemTokenModifiers = [];
+
+for (const modifier in lsp.SemanticTokenModifiers) {
+    SemTokenModifiers.push(modifier);
+}
+
 const initReq: lsp.InitializeParams = {
     rootUri: "file://G:/code/go/btKeeper",
     workspaceFolders: [
@@ -73,51 +85,19 @@ const initReq: lsp.InitializeParams = {
                     range: true,
                     full: true
                 },
-                tokenTypes: [
-                    lsp.SemanticTokenTypes.namespace,
-                    lsp.SemanticTokenTypes.type,
-                    lsp.SemanticTokenTypes.class,
-                    lsp.SemanticTokenTypes.enum,
-                    lsp.SemanticTokenTypes.interface,
-                    lsp.SemanticTokenTypes.struct,
-                    lsp.SemanticTokenTypes.typeParameter,
-                    lsp.SemanticTokenTypes.parameter,
-                    lsp.SemanticTokenTypes.variable,
-                    lsp.SemanticTokenTypes.property,
-                    lsp.SemanticTokenTypes.enumMember,
-                    lsp.SemanticTokenTypes.event,
-                    lsp.SemanticTokenTypes.function,
-                    lsp.SemanticTokenTypes.method,
-                    lsp.SemanticTokenTypes.macro,
-                    lsp.SemanticTokenTypes.keyword,
-                    lsp.SemanticTokenTypes.modifier,
-                    lsp.SemanticTokenTypes.comment,
-                    lsp.SemanticTokenTypes.string,
-                    lsp.SemanticTokenTypes.number,
-                    lsp.SemanticTokenTypes.regexp,
-                    lsp.SemanticTokenTypes.operator,
-                    lsp.SemanticTokenTypes.decorator
-                ],
-                tokenModifiers: [
-                    lsp.SemanticTokenModifiers.declaration,
-                    lsp.SemanticTokenModifiers.definition,
-                    lsp.SemanticTokenModifiers.readonly,
-                    lsp.SemanticTokenModifiers.static,
-                    lsp.SemanticTokenModifiers.deprecated,
-                    lsp.SemanticTokenModifiers.abstract,
-                    lsp.SemanticTokenModifiers.async,
-                    lsp.SemanticTokenModifiers.modification,
-                    lsp.SemanticTokenModifiers.documentation,
-                    lsp.SemanticTokenModifiers.defaultLibrary
-                ],
+                tokenTypes: SemTokenTypes,
+                tokenModifiers: SemTokenModifiers,
                 formats: ["relative"],
                 overlappingTokenSupport: true,
-                
+
             }
         },
         window: {
             workDoneProgress: true
         }
+    },
+    initializationOptions: {
+        semanticTokens: true
     },
     trace: "verbose"
 };
@@ -148,6 +128,10 @@ await conn.sendNotification(lsp.InitializedNotification.type, {});
 
 const codeText = readFileSync("G:/code/go/btKeeper/main.go").toString("utf-8");
 
+const codeLines = codeText.split("\r\n");
+
+console.log(codeLines);
+
 const openReq: lsp.DidOpenTextDocumentParams = {
     textDocument: {
         uri: "file://G:/code/go/btKeeper/main.go",
@@ -171,20 +155,6 @@ let symRes = await conn.sendRequest(lsp.DocumentSymbolRequest.type, symReq);
 
 console.log("symbol: ", symRes);
 
-const hoverReq: lsp.HoverParams = {
-    textDocument: {
-        uri: "file://G:/code/go/btKeeper/main.go"
-    },
-    position: {
-        line: 10,
-        character: 12
-    }
-}
-
-console.log("send hover");
-let hoverRes = await conn.sendRequest(lsp.HoverRequest.type, hoverReq);
-console.log("hover: ", hoverRes);
-
 const semReq: lsp.SemanticTokensParams = {
     textDocument: {
         uri: "file://G:/code/go/btKeeper/main.go"
@@ -193,7 +163,45 @@ const semReq: lsp.SemanticTokensParams = {
 
 console.log("send sem");
 let semRes = await conn.sendRequest(lsp.SemanticTokensRequest.type, semReq);
-console.log("sem: ", semRes);
+
+if (semRes !== null) {
+    const data = semRes.data;
+    let curLine = 0;
+    let curStart = 0;
+    for (let i = 0; i < data.length; i += 5) {
+        const deltaLine = data[i];
+        curLine += deltaLine;
+        if (deltaLine !== 0) {
+            curStart = 0;
+        }
+        const deltaStart = data[i + 1];
+        curStart += deltaStart;
+        const length = data[i + 2];
+        const code = codeLines[curLine].substring(curStart, curStart + length);
+        const tokenModifiers = [];
+        const modifier = data[i + 4];
+        for (let j = 0; j < SemTokenModifiers.length; j++) {
+            if ((modifier & (1 << j)) !== 0) {
+                tokenModifiers.push(SemTokenModifiers[j]);
+            }
+        }
+        console.log(`${code} tokenTypes: ${SemTokenTypes[data[i + 3]]}; tokenModifier: ${data[i + 4]} ${JSON.stringify(tokenModifiers)}`);
+    }
+}
+
+const hoverReq: lsp.HoverParams = {
+    textDocument: {
+        uri: "file://G:/code/go/btKeeper/main.go"
+    },
+    position: {
+        line: 16,
+        character: 17
+    }
+}
+
+console.log("send hover");
+let hoverRes = await conn.sendRequest(lsp.HoverRequest.type, hoverReq);
+console.log("hover: ", hoverRes);
 
 await conn.sendNotification(lsp.ExitNotification.type);
 
